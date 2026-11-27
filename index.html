@@ -248,6 +248,11 @@ details.mapbox summary span{font-weight:400;color:var(--mute);font-size:12px}
 .map-fail{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;font-size:13px;color:var(--mute);background:#EDF0F3}
 .mk{width:22px;height:22px;border-radius:50%;background:var(--brand);color:#fff;font-size:11.5px;font-weight:600;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 5px rgba(20,40,60,.35);cursor:pointer;font-family:inherit;line-height:1}
 .mapboxgl-popup-content{font-size:12.5px;padding:8px 11px;border-radius:8px;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
+/* 气泡里的导航入口：先谷歌地图，Apple 地图作备选 */
+.navrow{display:flex;gap:6px;margin-top:7px}
+.navrow a{display:inline-block;padding:3px 9px;font-size:11.5px;font-weight:600;line-height:1.6;color:var(--brand);background:var(--brand-soft);border:1px solid var(--brand-line);border-radius:999px;text-decoration:none;white-space:nowrap}
+.navrow a.ap{color:var(--sub);background:#fff;border-color:var(--line);font-weight:500}
+.navrow a:active{opacity:.65}
 .mk.mk-hotel{background:#A9501C;width:25px;height:25px;font-size:11px;z-index:5}
 .mk.mk-shop,.mk.mk-mart{background:#2E7D5B}
 .mk.mk-eat{background:#B03A2E}
@@ -1901,7 +1906,11 @@ function L(zh, en){ return LANG() === 'en' ? (en != null ? en : tEn(zh)) : zh; }
         var mk = new window.mapboxgl.Marker({ element: d, anchor:'center' })
           .setLngLat([p[3], p[2]])
           .setPopup(new window.mapboxgl.Popup({ offset:16, closeButton:false })
-            .setHTML('<b>' + Z(p[0], p[1]) + '</b><br><span style="color:#6b7280;font-size:11.5px">' + Z(p[1], '') + '</span>'))
+            .setHTML('<b>' + Z(p[0], p[1]) + '</b><br><span style="color:#6b7280;font-size:11.5px">' + Z(p[1], '') + '</span>'
+              + '<div class="navrow">'
+              + '<a href="https://www.google.com/maps/dir/?api=1&destination=' + p[2] + ',' + p[3] + '" target="_blank" rel="noopener">' + Z('谷歌地图导航', 'Google Maps') + '</a>'
+              + '<a class="ap" href="https://maps.apple.com/?daddr=' + p[2] + ',' + p[3] + '" target="_blank" rel="noopener">' + Z('Apple 地图', 'Apple Maps') + '</a>'
+              + '</div>'))
           .addTo(map);
         map.__markers.push(mk);
         var k = catKey(it.t);
