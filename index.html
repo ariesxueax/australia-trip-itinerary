@@ -1883,8 +1883,11 @@ function L(zh, en){ return LANG() === 'en' ? (en != null ? en : tEn(zh)) : zh; }
       style: 'mapbox://styles/mapbox/light-v11',
       center: [route.pts[0][3], route.pts[0][2]],
       zoom: 12,
-      /* 手机专属：单指滑动仍滚动页面，双指才移动地图，避免手指卡在地图上 */
-      cooperativeGestures: true,
+      /* 单指就能拖动地图（关掉 cooperativeGestures）。
+         代价是手指落在地图里时页面不会跟着滚，所以顺手关掉滚轮缩放：
+         电脑上鼠标划过地图不会把整页滚动抢走，缩放交给右下角 ＋/－ 和双击/双指。 */
+      cooperativeGestures: false,
+      scrollZoom: false,
       dragRotate: false,
       pitchWithRotate: false,
       touchPitch: false
