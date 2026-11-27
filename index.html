@@ -258,6 +258,11 @@ details.mapbox summary span{font-weight:400;color:var(--mute);font-size:12px}
 .mk.mk-shop,.mk.mk-mart{background:#2E7D5B}
 .mk.mk-eat{background:#B03A2E}
 .mk.mk-buy{background:#35507A}
+/* 厕所点：小一号，压在其它点下面，不抢视线 */
+.mk.mk-wc{background:#1F6FB2;width:20px;height:20px;font-size:8.5px;font-weight:700;letter-spacing:.2px;z-index:2}
+/* 厕所图层取不到数据 / 一条都没有时的兜底提示条 */
+.map-note{position:absolute;left:8px;right:8px;bottom:24px;z-index:6;background:rgba(255,255,255,.96);border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:11.5px;line-height:1.5;color:var(--sub);box-shadow:0 1px 5px rgba(20,40,60,.14)}
+.map-note a{color:var(--brand);font-weight:600;text-decoration:none}
 
 /* 图层标签（地图内浮层，默认只显示路线与住宿） */
 .map-tabs{position:absolute;top:8px;left:8px;z-index:6;display:flex;flex-wrap:wrap;gap:5px;max-width:calc(100% - 56px);pointer-events:none}
@@ -271,6 +276,7 @@ details.mapbox summary span{font-weight:400;color:var(--mute);font-size:12px}
 .mtab[data-cat="eat"]{color:#B03A2E}
 .mtab[data-cat="buy"]{color:#35507A}
 .mtab[data-cat="mart"]{color:#2E7D5B}
+.mtab[data-cat="wc"]{color:#1F6FB2}
 .mtab:not(.on){color:#9AA3A0}
 .mtab:not(.on) i{opacity:.3}
 
@@ -1784,8 +1790,8 @@ function L(zh, en){ return LANG() === 'en' ? (en != null ? en : tEn(zh)) : zh; }
   /* 类型 -> 图层键：路线点位无类型，其余去掉 mk- 前缀 */
   function catKey(t){ return t ? t.replace('mk-', '') : 'route'; }
 
-  /* 图层标签：默认只亮路线与住宿，餐饮/购物/超市点开才显示 */
-  var TABS = [['route','路线','Route'], ['hotel','住宿','Stay'], ['eat','吃什么','Eat'], ['buy','购物','Shops'], ['mart','超市','Groceries']];
+  /* 图层标签：默认只亮路线与住宿，餐饮/购物/超市点开才显示；厕所按范围实时取 */
+  var TABS = [['route','路线','Route'], ['hotel','住宿','Stay'], ['wc','厕所','Toilets'], ['eat','吃什么','Eat'], ['buy','购物','Shops'], ['mart','超市','Groceries']];
 
   /* ================= 气泡里的导航：直接唤起地图 App，唤起不了才回落网页 =================
      iOS  谷歌 → comgooglemaps:// 百度 → baidumap://
@@ -1797,6 +1803,9 @@ function L(zh, en){ return LANG() === 'en' ? (en != null ? en : tEn(zh)) : zh; }
   var NAV_WX  = /MicroMessenger/i.test(NAV_UA);
 
   function navWeb(kind, lat, lng, name){
+    if (kind === 's')
+      return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent('public toilet')
+           + '&center=' + lat + ',' + lng + '&zoom=16';
     if (kind === 'b')
       return 'https://map.baidu.com/dir/?destination=latlng:' + lat + ',' + lng
            + '|name:' + encodeURIComponent(name) + '&mode=driving&coord_type=gcj02';
@@ -1804,6 +1813,16 @@ function L(zh, en){ return LANG() === 'en' ? (en != null ? en : tEn(zh)) : zh; }
   }
 
   function navApp(kind, lat, lng, name){
+    if (kind === 's'){
+      /* 就近搜厕所：不指定终点，让地图自己列出周边结果 */
+      var q = encodeURIComponent('public toilet');
+      if (NAV_IOS) return 'comgooglemaps://?q=' + q + '&center=' + lat + ',' + lng;
+      if (NAV_AND)
+        return 'intent://maps.google.com/maps?q=' + q + '&center=' + lat + ',' + lng
+             + '#Intent;scheme=https;package=com.google.android.apps.maps;S.browser_fallback_url='
+             + encodeURIComponent(navWeb('s', lat, lng, name)) + ';end';
+      return navWeb('s', lat, lng, name);
+    }
     if (kind === 'b')
       /* origin 必须原样写 {{我的位置}}，name 不能省，两者少一个百度都不给规划 */
       return 'baidumap://map/direction?origin={{我的位置}}&destination=latlng:' + lat + ',' + lng
@@ -1874,7 +1893,7 @@ function L(zh, en){ return LANG() === 'en' ? (en != null ? en : tEn(zh)) : zh; }
     map.__markers = [];
     map.__catMk = {};
 
-    var show = { route:true, hotel:true, eat:false, buy:false, mart:false };
+    var show = { route:true, hotel:true, eat:false, buy:false, mart:false, wc:false };
     var det = el.closest ? el.closest('details') : null;
 
     function setCat(cat, visible){
@@ -1893,6 +1912,14 @@ function L(zh, en){ return LANG() === 'en' ? (en != null ? en : tEn(zh)) : zh; }
             setTimeout(function(){ eatBox.scrollIntoView({ block:'nearest', behavior:'smooth' }); }, 80);
           }
         }
+      }
+      /* 厕所是实时取的图层，第一次点开才去请求 */
+      if (cat === 'wc'){
+        if (visible) wcLoad();
+        (map.__wcMk || []).forEach(function(mk){
+          var e = mk.getElement(); if (e) e.style.display = visible ? '' : 'none';
+        });
+        if (visible){ if (wc.done) wcNoteShow(); } else wcNoteOff();
       }
     }
 
@@ -1915,6 +1942,154 @@ function L(zh, en){ return LANG() === 'en' ? (en != null ? en : tEn(zh)) : zh; }
       if (!any) fitToVisible();
     }
 
+    /* ================= 厕所图层 =================
+       数据来自 OSM（Overpass 公共接口，免费、无需 key）。
+       按「每个落脚点周边 800 m」取，而不是取整天的包络框——大洋路那种 200 km 跨度
+       若按框扫，会去扫一大片没厕所的乡野，又慢又没用。
+       取不到或一条都没有时，退化成「用谷歌地图搜附近厕所」。                          */
+    var WCT = {
+      name: Z('公共厕所', 'Public toilet'),
+      free: Z('免费', 'Free'),
+      paid: Z('收费', 'Fee'),
+      wheel: Z('无障碍', 'Step-free'),
+      wheel2: Z('部分无障碍', 'Partly step-free'),
+      none: Z('这一带 OSM 上没标厕所', 'No toilets mapped in OSM around here'),
+      loading: Z('正在取周边 300 米内的厕所…', 'Looking for toilets within 300 m…'),
+      more: Z('用谷歌地图搜附近厕所', 'Find toilets in Google Maps'),
+      fail: Z('厕所数据没取到', 'Toilet data did not load'),
+      retry: Z('重试', 'Retry')
+    };
+    var wc = { loading:false, done:false, noteHtml:'', c:null };
+
+    /* 去重后的落脚点；太多时均匀取样，避免查询语句过长 */
+    function wcPts(){
+      var seen = {}, pts = [];
+      items.forEach(function(it){
+        var k = it.p[2].toFixed(3) + ',' + it.p[3].toFixed(3);
+        if (seen[k]) return;
+        seen[k] = 1;
+        pts.push([it.p[2], it.p[3]]);
+      });
+      if (pts.length > 8){
+        var step = pts.length / 8, pick = [];
+        for (var i = 0; i < 8; i++) pick.push(pts[Math.floor(i * step)]);
+        pts = pick;
+      }
+      return pts;
+    }
+
+    function wcSetCount(txt){
+      var b = el.querySelector('.mtab[data-cat="wc"] b');
+      if (b) b.textContent = txt;
+    }
+
+    function wcNote(html){
+      wc.noteHtml = html;
+      if (!wc.note){
+        wc.note = document.createElement('div');
+        wc.note.className = 'map-note';
+        wc.note.addEventListener('click', function(ev){
+          var a = ev.target;
+          if (a && a.id === 'wcRetry'){
+            ev.preventDefault();
+            wc.done = false; wc.noteHtml = ''; wcNoteOff();
+            wcLoad();
+          }
+        });
+        el.appendChild(wc.note);
+      }
+      wc.note.innerHTML = html;
+      wc.note.style.display = 'block';
+    }
+    function wcNoteOff(){ if (wc.note) wc.note.style.display = 'none'; }
+    function wcNoteShow(){ if (wc.noteHtml) wcNote(wc.noteHtml); }
+
+    function wcDraw(list){
+      (map.__wcMk || []).forEach(function(mk){ mk.remove(); });
+      map.__wcMk = [];
+      var seen = {}, n = 0;
+      list.forEach(function(t){
+        var lat = t.lat != null ? t.lat : (t.center && t.center.lat);
+        var lng = t.lon != null ? t.lon : (t.center && t.center.lon);
+        if (lat == null || lng == null) return;
+        var key = lat.toFixed(5) + ',' + lng.toFixed(5);
+        if (seen[key]) return;
+        seen[key] = 1; n++;
+        var tags = t.tags || {};
+        var bits = [];
+        if (tags.fee === 'no') bits.push(WCT.free);
+        else if (tags.fee === 'yes') bits.push(WCT.paid);
+        if (tags.wheelchair === 'yes') bits.push(WCT.wheel);
+        else if (tags.wheelchair === 'limited') bits.push(WCT.wheel2);
+        if (tags.opening_hours) bits.push(tags.opening_hours);
+        var d2 = document.createElement('div');
+        d2.className = 'mk mk-wc';
+        d2.textContent = 'WC';
+        var mk = new window.mapboxgl.Marker({ element: d2, anchor:'center' })
+          .setLngLat([lng, lat])
+          .setPopup(new window.mapboxgl.Popup({ offset:14, closeButton:false })
+            .setHTML('<b>' + (tags.name ? escT(tags.name) : WCT.name) + '</b>'
+              + (bits.length ? '<br><span style="color:#6b7280;font-size:11.5px">' + bits.join(' · ') + '</span>' : '')
+              + navRow([tags.name || '公共厕所', '', lat, lng])))
+          .addTo(map);
+        map.__wcMk.push(mk);
+      });
+      wcSetCount(n ? String(n) : '0');
+      if (n) wcNoteOff();
+      else wcNote(WCT.none + ' · <a href="' + navWeb('s', wc.c[0], wc.c[1], '') + '" data-nav="s" data-lat="'
+        + wc.c[0] + '" data-lng="' + wc.c[1] + '">' + WCT.more + '</a>');
+    }
+
+    function wcLoad(){
+      if (wc.done || wc.loading) return;
+      wc.loading = true;
+      wcSetCount('…');
+      wcNote(WCT.loading);
+      var pts = wcPts();
+      if (!pts.length){ wc.loading = false; return; }
+      var sumLat = 0, sumLng = 0;
+      pts.forEach(function(c){ sumLat += c[0]; sumLng += c[1]; });
+      wc.c = [sumLat / pts.length, sumLng / pts.length];
+      var ck = pts.map(function(c){ return c[0].toFixed(3) + ',' + c[1].toFixed(3); }).join('|');
+      window.__WC_CACHE = window.__WC_CACHE || {};
+      if (window.__WC_CACHE[ck]){
+        wc.loading = false; wc.done = true;
+        wcDraw(window.__WC_CACHE[ck]);
+        return;
+      }
+      var body = pts.map(function(c){
+        return 'node["amenity"="toilets"](around:300,' + c[0] + ',' + c[1] + ');'
+             + 'way["amenity"="toilets"](around:300,' + c[0] + ',' + c[1] + ');';
+      }).join('');
+      var q = '[out:json][timeout:25];(' + body + ');out center 80;';
+      /* 主站高峰期会 502，失败就换镜像 */
+      var hosts = [
+        'https://overpass-api.de/api/interpreter',
+        'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
+      ];
+      function ask(i){
+        if (i >= hosts.length) return Promise.reject(new Error('all endpoints failed'));
+        return fetch(hosts[i] + '?data=' + encodeURIComponent(q))
+          .then(function(r){
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+          })
+          .catch(function(){ return ask(i + 1); });
+      }
+      ask(0)
+        .then(function(j){
+          wc.loading = false; wc.done = true;
+          var els = (j && j.elements) || [];
+          window.__WC_CACHE[ck] = els;
+          wcDraw(els);
+        })
+        .catch(function(){
+          wc.loading = false;
+          wcSetCount('?');
+          wcNote(WCT.fail + ' · <a href="#" id="wcRetry">' + WCT.retry + '</a>');
+        });
+    }
+
     if (opts.tabs){
       var tabs = document.createElement('div');
       tabs.className = 'map-tabs';
@@ -1922,6 +2097,17 @@ function L(zh, en){ return LANG() === 'en' ? (en != null ? en : tEn(zh)) : zh; }
       items.forEach(function(it){ var k = catKey(it.t); cnt[k] = (cnt[k] || 0) + 1; });
       TABS.forEach(function(t){
         var k = t[0];
+        if (k === 'wc'){
+          /* 厕所图层：条数要等取回后才知道，先空着 */
+          var wb = document.createElement('button');
+          wb.type = 'button';
+          wb.className = 'mtab' + (show.wc ? ' on' : '');
+          wb.setAttribute('data-cat', 'wc');
+          wb.innerHTML = '<i></i>' + Z(t[1], t[2]) + '<b></b>';
+          wb.addEventListener('click', function(){ map.__showCat('wc', !show.wc); });
+          tabs.appendChild(wb);
+          return;
+        }
         if (!cnt[k]) return;
         var btn = document.createElement('button');
         btn.type = 'button';
